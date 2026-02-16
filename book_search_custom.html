@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>알라딘 to 노션 위젯 (최종 수정판)</title>
+    <style>
+        /* 기본 리셋 및 폰트 */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #f0f0f0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh;
+        }
+
+        /* 위젯 프레임 */
+        #widget {
+            width: 320px;
+            height: 320px;
+            background-color: #2b2b2b;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            color: #ffffff;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 공통 스크린 설정 */
+        .screen {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+        }
+        .screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.95);
+        }
+
+        /* --- 1. 홈 스크린 (시계) --- */
+        #home-screen {
+            justify-content: center;
+            align-items: center;
+            z-index: 2;
+        }
+        .clock-time { font-size: 48px; font-weight: bold; letter-spacing: 1px; }
+        .clock-date { font-size: 14px; color: #aaaaaa; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
+        .search-btn {
+            margin-top: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+        .search-btn:hover { background: rgba(255, 255, 255, 0.2); }
+
+        /* --- 2. 검색 스크린 --- */
+        #search-screen {
+            background-color: #2b2b2b;
+            z-index: 1;
+            padding: 15px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            background: #3a3a3a;
+            border-radius: 8px;
+            padding: 5px 10px;
+        }
+        .back-btn {
+            background: none; border: none; color: #aaa; font-size: 18px; cursor: pointer; padding: 5px;
+        }
+        .back-btn:hover { color: white; }
+        .search-input {
+            background: transparent; border: none; color: white; flex: 1; padding: 8px; font-size: 15px; outline: none;
+        }
+        .search-input::placeholder { color: #888; }
+
+        /* 로딩 스피너 */
+        .loader-container {
+            display: none; justify-content: center; align-items: center; padding: 20px; color: #aaa; font-size: 13px; gap: 8px;
+        }
+        .spinner {
+            width: 16px; height: 16px; border: 2px solid #555; border-top-color: #fff; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 검색 결과 리스트 */
+        #result-list {
+            flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+            scrollbar-width: none; -ms-overflow-style: none;
+        }
+        #result-list::-webkit-scrollbar { display: none; }
+        
+        .result-item {
+            display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; transition: background 0.2s; position: relative;
+        }
+        .result-item:hover { background: rgba(255,255,255,0.1); }
+        .result-cover { width: 40px; height: 55px; object-fit: cover; border-radius: 4px; background: #444; }
+        .result-info { flex: 1; overflow: hidden; }
+        .result-title { font-size: 14px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+        .result-author { font-size: 11px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
+        /* 개별 아이템 저장 중 로딩 */
+        .item-loading {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(43, 43, 43, 0.8);
+            display: none; justify-content: center; align-items: center; border-radius: 8px;
+        }
+
+        /* --- 3. Saved 오버레이 애니메이션 (최종 수정) --- */
+        #saved-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(43, 43, 43, 0.95);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 10; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        }
+        #saved-overlay.show { opacity: 1; pointer-events: auto; }
+        
+        /* 수정된 체크 아이콘 스타일 (이미지와 동일한 굵고 둥근 형태) */
+        .check-icon-bold {
+            width: 64px; height: 64px; margin-bottom: 15px; color: white;
+            transform: scale(0.5); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        #saved-overlay.show .check-icon-bold { transform: scale(1); }
+        
+        .saved-text { font-size: 16px; font-weight: bold; letter-spacing: 1px; color: white; }
+
+    </style>
+</head>
+<body>
+
+    <div id="widget">
+        <div id="home-screen" class="screen">
+            <div class="clock-time" id="clock-time">00:00</div>
+            <div class="clock-date" id="clock-date">DAY, MONTH 00</div>
+            <button class="search-btn" onclick="toggleScreen('search')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                Search
+            </button>
+        </div>
+
+        <div id="search-screen" class="screen hidden">
+            <div class="header">
+                <button class="back-btn" onclick="toggleScreen('home')">←</button>
+                <input type="text" id="search-input" class="search-input" placeholder="Search..." onkeyup="handleInput(event)" autocomplete="off">
+            </div>
+            <div id="loader" class="loader-container"><div class="spinner"></div> Searching...</div>
+            <div id="result-list"></div>
+        </div>
+
+        <div id="saved-overlay">
+            <svg class="check-icon-bold" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <div class="saved-text">Saved!</div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 🔑 API 설정
+        // ==========================================
+        const CONFIG = {
+            ALADIN_KEY: "ttbkim171211042001",
+            NOTION_TOKEN: "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",
+            NOTION_DB_ID: "3066860b8b5e800aa8a4eff715ba9d58",
+            PROXY_URL: "https://cors-anywhere.herokuapp.com/"
+        };
+
+        // --- 시계 ---
+        function updateClock() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('clock-time').textContent = `${hours}:${minutes}`;
+            const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+            const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+            document.getElementById('clock-date').textContent = `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}`;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // --- 화면 전환 ---
+        function toggleScreen(screen) {
+            const home = document.getElementById('home-screen');
+            const search = document.getElementById('search-screen');
+            const input = document.getElementById('search-input');
+            
+            if (screen === 'search') {
+                home.classList.add('hidden');
+                search.classList.remove('hidden');
+                setTimeout(() => input.focus(), 300);
+            } else {
+                search.classList.add('hidden');
+                home.classList.remove('hidden');
+                input.value = '';
+                document.getElementById('result-list').innerHTML = '';
+            }
+        }
+
+        // --- 검색 ---
+        let searchTimeout;
+        function handleInput(event) {
+            clearTimeout(searchTimeout);
+            const query = event.target.value.trim();
+            const resultList = document.getElementById('result-list');
+            const loader = document.getElementById('loader');
+
+            if (query.length === 0) {
+                resultList.innerHTML = '';
+                loader.style.display = 'none';
+                return;
+            }
+            if (event.key === 'Enter') {
+                searchBooks(query);
+            } else {
+                loader.style.display = 'flex';
+                resultList.innerHTML = '';
+                searchTimeout = setTimeout(() => searchBooks(query), 600);
+            }
+        }
+
+        async function searchBooks(query) {
+            const resultList = document.getElementById('result-list');
+            const loader = document.getElementById('loader');
+            const url = `${CONFIG.PROXY_URL}http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${CONFIG.ALADIN_KEY}&Query=${encodeURIComponent(query)}&QueryType=Title&MaxResults=10&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
+
+            try {
+                const response = await fetch(url);
+                if (response.status === 403) throw new Error("CORS 인증 필요");
+                const data = await response.json();
+                loader.style.display = 'none';
+                resultList.innerHTML = '';
+                if (!data.item || data.item.length === 0) {
+                    resultList.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px; font-size:12px;">결과가 없습니다.</div>';
+                    return;
+                }
+                data.item.forEach(book => renderBookItem(book, resultList));
+            } catch (error) {
+                loader.style.display = 'none';
+                resultList.innerHTML = error.message.includes("CORS") ? `<div style="color:#ff6b6b; font-size:12px; padding:10px; text-align:center;">프록시 권한 필요. <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" style="color:#4caf50;">여기 클릭</a> 후 재시도.</div>` : `<div style="color:red; font-size:12px;">오류: ${error.message}</div>`;
+            }
+        }
+
+        function renderBookItem(book, container) {
+            const item = document.createElement('div');
+            item.className = 'result-item';
+            item.innerHTML = `
+                <img src="${book.cover}" class="result-cover" alt="cover">
+                <div class="result-info">
+                    <div class="result-title">${book.title}</div>
+                    <div class="result-author">${book.author} | ${book.publisher}</div>
+                </div>
+                <div class="item-loading"><div class="spinner"></div></div>
+            `;
+            item.onclick = () => saveToNotion(item, book);
+            container.appendChild(item);
+        }
+
+        // --- 노션 저장 ---
+        async function saveToNotion(element, book) {
+            const loadingOverlay = element.querySelector('.item-loading');
+            loadingOverlay.style.display = 'flex';
+
+            const descText = book.description ? book.description.substring(0, 1800) : "책 소개 없음";
+            const payload = {
+                "parent": { "database_id": CONFIG.NOTION_DB_ID },
+                "cover": { "type": "external", "external": { "url": book.cover } },
+                "properties": {
+                    "제목": { "title": [ { "text": { "content": book.title } } ] },
+                    "저자": { "rich_text": [ { "text": { "content": book.author } } ] },
+                    "출판사": { "rich_text": [ { "text": { "content": book.publisher } } ] },
+                    "ISBN": { "rich_text": [ { "text": { "content": book.isbn13 || book.isbn } } ] },
+                    "링크": { "url": book.link }
+                },
+                "children": [
+                    { "object": "block", "type": "heading_2", "heading_2": { "rich_text": [{ "type": "text", "text": { "content": "책 소개" } }] } },
+                    { "object": "block", "type": "paragraph", "paragraph": { "rich_text": [{ "type": "text", "text": { "content": descText } }] } }
+                ]
+            };
+
+            try {
+                const response = await fetch(`${CONFIG.PROXY_URL}https://api.notion.com/v1/pages`, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${CONFIG.NOTION_TOKEN}`,
+                        "Content-Type": "application/json",
+                        "Notion-Version": "2022-06-28"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                loadingOverlay.style.display = 'none';
+
+                if (response.ok) {
+                    showSavedAnimation(); // 성공 애니메이션 호출
+                } else {
+                    const err = await response.json();
+                    throw new Error(err.message);
+                }
+            } catch (error) {
+                loadingOverlay.style.display = 'none';
+                alert(`저장 실패: ${error.message}`);
+            }
+        }
+
+        // --- 성공 애니메이션 ---
+        function showSavedAnimation() {
+            const overlay = document.getElementById('saved-overlay');
+            overlay.classList.add('show');
+            
+            // 1.5초 후 오버레이만 숨기고 화면은 유지
+            setTimeout(() => {
+                overlay.classList.remove('show');
+            }, 1500);
+        }
+    </script>
+</body>
+</html>

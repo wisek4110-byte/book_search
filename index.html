@@ -282,21 +282,58 @@
             loadingOverlay.style.display = 'flex';
 
             const descText = book.description ? book.description.substring(0, 1800) : "책 소개 없음";
+            // ==========================================
+            // 노션 API Payload 구성
+            // ==========================================
             const payload = {
                 "parent": { "database_id": CONFIG.NOTION_DB_ID },
-                "cover": { "type": "external", "external": { "url": book.cover } },
                 "properties": {
                     "제목": { "title": [ { "text": { "content": book.title } } ] },
                     "저자": { "rich_text": [ { "text": { "content": book.author } } ] },
                     "출판사": { "rich_text": [ { "text": { "content": book.publisher } } ] },
                     "ISBN": { "rich_text": [ { "text": { "content": book.isbn13 || book.isbn } } ] },
-                    "링크": { "url": book.link }
+                    "링크": { "url": book.link },
+                    
+                    // 👇 새로 추가된 '선택(Select)' 속성 설정 👇
+                    // ⚠️ 주의: "상태"라는 글자를 노션 데이터베이스의 실제 열(Column) 이름과 똑같이 맞춰주세요!
+                    "상태": { 
+                        "select": {
+                            "name": "읽고 싶은 책"
+                        }
+                    }
                 },
                 "children": [
-                    { "object": "block", "type": "heading_2", "heading_2": { "rich_text": [{ "type": "text", "text": { "content": "책 소개" } }] } },
-                    { "object": "block", "type": "paragraph", "paragraph": { "rich_text": [{ "type": "text", "text": { "content": descText } }] } }
+                    // 1. 페이지 본문 제일 위에 표지 이미지 삽입
+                    {
+                        "object": "block",
+                        "type": "image",
+                        "image": { "type": "external", "external": { "url": book.cover } }
+                    },
+                    // 2. 책 소개 제목
+                    { 
+                        "object": "block", 
+                        "type": "heading_2", 
+                        "heading_2": { "rich_text": [{ "type": "text", "text": { "content": "책 소개" } }] } 
+                    }
                 ]
             };
+
+            // 3. 책 소개 내용 (노션의 2000자 제한 에러 방지용 자동 분할 로직)
+            const fullDesc = book.description || "책 소개 없음";
+            const maxLen = 2000;
+            
+            for (let i = 0; i < fullDesc.length; i += maxLen) {
+                payload.children.push({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [{ "type": "text", "text": { "content": fullDesc.substring(i, i + maxLen) } }]
+                    }
+                });
+            }
+            // ==========================================
+            // 여기까지가 Payload 구성의 끝입니다. 
+            // 이 아래부터는 기존의 fetch(API 전송) 코드가 이어집니다.
 
             try {
                 const response = await fetch(`${CONFIG.PROXY_URL}https://api.notion.com/v1/pages`, {
@@ -336,4 +373,5 @@
     </script>
 </body>
 </html>
+
 

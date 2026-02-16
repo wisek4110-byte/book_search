@@ -287,6 +287,13 @@
             // ==========================================
             const payload = {
                 "parent": { "database_id": CONFIG.NOTION_DB_ID },
+                
+                // 👇 이 부분이 새로 추가되었습니다. (노션 페이지 공식 아이콘 설정) 👇
+                "icon": {
+                    "type": "emoji",
+                    "emoji": "📖"
+                },
+                
                 "properties": {
                     "제목": { "title": [ { "text": { "content": book.title } } ] },
                     "저자": { "rich_text": [ { "text": { "content": book.author } } ] },
@@ -294,8 +301,6 @@
                     "ISBN": { "rich_text": [ { "text": { "content": book.isbn13 || book.isbn } } ] },
                     "링크": { "url": book.link },
                     
-                    // 👇 새로 추가된 '선택(Select)' 속성 설정 👇
-                    // ⚠️ 주의: "상태"라는 글자를 노션 데이터베이스의 실제 열(Column) 이름과 똑같이 맞춰주세요!
                     "상태": { 
                         "select": {
                             "name": "읽고 싶은 책"
@@ -331,9 +336,6 @@
                     }
                 });
             }
-            // ==========================================
-            // 여기까지가 Payload 구성의 끝입니다. 
-            // 이 아래부터는 기존의 fetch(API 전송) 코드가 이어집니다.
 
             try {
                 const response = await fetch(`${CONFIG.PROXY_URL}https://api.notion.com/v1/pages`, {
@@ -373,5 +375,3 @@
     </script>
 </body>
 </html>
-
-

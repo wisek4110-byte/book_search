@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>알라딘 to 노션 위젯</title>
+    <title>알라딘 to 노션 위젯 (중복 방지 추가)</title>
     <style>
         /* 기본 리셋 및 폰트 */
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -124,7 +124,7 @@
             display: none; justify-content: center; align-items: center; border-radius: 8px;
         }
 
-        /* --- 3. Saved 오버레이 애니메이션 (최종 수정) --- */
+        /* --- 3. Saved 오버레이 애니메이션 --- */
         #saved-overlay {
             position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(43, 43, 43, 0.95);
             display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -132,7 +132,6 @@
         }
         #saved-overlay.show { opacity: 1; pointer-events: auto; }
         
-        /* 수정된 체크 아이콘 스타일 (이미지와 동일한 굵고 둥근 형태) */
         .check-icon-bold {
             width: 64px; height: 64px; margin-bottom: 15px; color: white;
             transform: scale(0.5); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -178,15 +177,9 @@
         // ==========================================
         const CONFIG = {
             ALADIN_KEY: "ttbkim171211042001",
-            
-            // 🚨 수정된 부분: 깃허브 봇을 피하기 위해 "ntn_" 부분과 나머지 키를 쪼개서 적습니다.
-            // 복사하신 새 토큰에서 'ntn_'을 제외한 나머지 부분만 두 번째 따옴표 안에 넣으세요.
             NOTION_TOKEN: "ntn_" + "280187072942To1ghxMav05yoW87dOK15eVTibQNFd7bZB", 
-            
             NOTION_DB_ID: "3066860b8b5e800aa8a4eff715ba9d58",
-            // PROXY_URL: "https://cors-anywhere.herokuapp.com/"
-            // 👇 Heroku 프록시 대신 아래 URL로 변경하세요.
-               PROXY_URL: "https://corsproxy.io/?"
+            PROXY_URL: "https://corsproxy.io/?"
         };        
 
         // --- 시계 ---
@@ -245,12 +238,10 @@
         async function searchBooks(query) {
             const resultList = document.getElementById('result-list');
             const loader = document.getElementById('loader');
-             // 👇 여기서부터 변경되었습니다 👇
             const targetUrl = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${CONFIG.ALADIN_KEY}&Query=${encodeURIComponent(query)}&QueryType=Title&MaxResults=10&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
 
             try {
                 const response = await fetch(`${CONFIG.PROXY_URL}${encodeURIComponent(targetUrl)}`);
-            // 👆 여기까지 변경되었습니다 👆
                 if (response.status === 403) throw new Error("CORS 인증 필요");
                 const data = await response.json();
                 loader.style.display = 'none';
@@ -262,7 +253,7 @@
                 data.item.forEach(book => renderBookItem(book, resultList));
             } catch (error) {
                 loader.style.display = 'none';
-                resultList.innerHTML = error.message.includes("CORS") ? `<div style="color:#ff6b6b; font-size:12px; padding:10px; text-align:center;">프록시 권한 필요. <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" style="color:#4caf50;">여기 클릭</a> 후 재시도.</div>` : `<div style="color:red; font-size:12px;">오류: ${error.message}</div>`;
+                resultList.innerHTML = `<div style="color:red; font-size:12px;">오류: ${error.message}</div>`;
             }
         }
 
@@ -286,40 +277,92 @@
             const loadingOverlay = element.querySelector('.item-loading');
             loadingOverlay.style.display = 'flex';
 
+            const isbn = book.isbn13 || book.isbn;
+
+            // ==========================================
+            // 🛑 [신규 추가] 중복 도서 체크 로직
+            // ==========================================
+            try {
+                const checkUrl = `https://api.notion.com/v1/databases/${CONFIG.NOTION_DB_ID}/query`;
+                const checkResponse = await fetch(`${CONFIG.PROXY_URL}${encodeURIComponent(checkUrl)}`, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${CONFIG.NOTION_TOKEN}`,
+                        "Content-Type": "application/json",
+                        "Notion-Version": "2022-06-28"
+                    },
+                    body: JSON.stringify({
+                        "filter": {
+                            "property": "ISBN",
+                            "rich_text": {
+                                "equals": isbn
+                            }
+                        }
+                    })
+                });
+
+                if (checkResponse.ok) {
+                    const checkData = await checkResponse.json();
+                    // 이미 결과가 존재한다면 중복된 책이므로 중단
+                    if (checkData.results && checkData.results.length > 0) {
+                        loadingOverlay.style.display = 'none';
+                        alert(`⚠️ 이미 데이터베이스에 저장되어 있는 도서입니다!\n[${book.title}]`);
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error("중복 검사 중 오류 발생:", err);
+            }
+
             const descText = book.description ? book.description.substring(0, 1800) : "책 소개 없음";
+            
             // ==========================================
             // 노션 API Payload 구성
             // ==========================================
             const payload = {
                 "parent": { "database_id": CONFIG.NOTION_DB_ID },
                 
-                // 👇 이 부분이 새로 추가되었습니다. (노션 페이지 공식 아이콘 설정) 👇
                 "icon": {
                     "type": "emoji",
                     "emoji": "📖"
+                },
+                
+                "cover": {
+                    "type": "external",
+                    "external": { "url": book.cover }
                 },
                 
                 "properties": {
                     "제목": { "title": [ { "text": { "content": book.title } } ] },
                     "저자": { "rich_text": [ { "text": { "content": book.author } } ] },
                     "출판사": { "rich_text": [ { "text": { "content": book.publisher } } ] },
-                    "ISBN": { "rich_text": [ { "text": { "content": book.isbn13 || book.isbn } } ] },
+                    "ISBN": { "rich_text": [ { "text": { "content": isbn } } ] },
                     "링크": { "url": book.link },
                     
                     "상태": { 
                         "select": {
                             "name": "읽고 싶은 책"
                         }
+                    },
+                    
+                    "표지": {
+                        "files": [
+                            {
+                                "name": book.title + " 표지",
+                                "type": "external",
+                                "external": {
+                                    "url": book.cover
+                                }
+                            }
+                        ]
                     }
                 },
                 "children": [
-                    // 1. 페이지 본문 제일 위에 표지 이미지 삽입
                     {
                         "object": "block",
                         "type": "image",
                         "image": { "type": "external", "external": { "url": book.cover } }
                     },
-                    // 2. 책 소개 제목
                     { 
                         "object": "block", 
                         "type": "heading_2", 
@@ -328,7 +371,6 @@
                 ]
             };
 
-            // 3. 책 소개 내용 (노션의 2000자 제한 에러 방지용 자동 분할 로직)
             const fullDesc = book.description || "책 소개 없음";
             const maxLen = 2000;
             
@@ -343,7 +385,9 @@
             }
 
             try {
-                const response = await fetch(`${CONFIG.PROXY_URL}https://api.notion.com/v1/pages`, {
+                // 브라우저 환경에서 안정적인 통신을 위해 생성 API에도 프록시 주소를 적용했습니다.
+                const saveUrl = `https://api.notion.com/v1/pages`;
+                const response = await fetch(`${CONFIG.PROXY_URL}${encodeURIComponent(saveUrl)}`, {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${CONFIG.NOTION_TOKEN}`,
@@ -356,7 +400,7 @@
                 loadingOverlay.style.display = 'none';
 
                 if (response.ok) {
-                    showSavedAnimation(); // 성공 애니메이션 호출
+                    showSavedAnimation(); 
                 } else {
                     const err = await response.json();
                     throw new Error(err.message);
@@ -372,7 +416,6 @@
             const overlay = document.getElementById('saved-overlay');
             overlay.classList.add('show');
             
-            // 1.5초 후 오버레이만 숨기고 화면은 유지
             setTimeout(() => {
                 overlay.classList.remove('show');
             }, 1500);
@@ -380,8 +423,3 @@
     </script>
 </body>
 </html>
-
-
-
-
-

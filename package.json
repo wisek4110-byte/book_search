@@ -1,0 +1,9 @@
+{
+  "name": "book-search-widget",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Notion embed용 도서 검색 위젯 (Aladin API + Notion API 서버리스 프록시)",
+  "engines": {
+    "node": ">=18"
+  }
+}

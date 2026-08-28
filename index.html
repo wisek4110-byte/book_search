@@ -173,14 +173,10 @@
 
     <script>
         // ==========================================
-        // 🔑 API 설정
+        // API 설정
+        // 알라딘/노션 API 키는 더 이상 브라우저 코드에 두지 않고
+        // 서버(/api/search, /api/save)에서만 사용합니다.
         // ==========================================
-        const CONFIG = {
-            ALADIN_KEY: "ttbkim171211042001",
-            NOTION_TOKEN: "ntn_" + "280187072942To1ghxMav05yoW87dOK15eVTibQNFd7bZB", 
-            NOTION_DB_ID: "3066860b8b5e800aa8a4eff715ba9d58",
-            PROXY_URL: "https://corsproxy.io/?"
-        };        
 
         // --- 시계 ---
         function updateClock() {
@@ -238,14 +234,16 @@
         async function searchBooks(query) {
             const resultList = document.getElementById('result-list');
             const loader = document.getElementById('loader');
-            const targetUrl = `http://www.aladin.co.kr/ttb/api/ItemSearch.aspx?ttbkey=${CONFIG.ALADIN_KEY}&Query=${encodeURIComponent(query)}&QueryType=Title&MaxResults=10&start=1&SearchTarget=Book&output=js&Version=20131101&Cover=Big`;
 
             try {
-                const response = await fetch(`${CONFIG.PROXY_URL}${encodeURIComponent(targetUrl)}`);
-                if (response.status === 403) throw new Error("CORS 인증 필요");
+                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 loader.style.display = 'none';
                 resultList.innerHTML = '';
+
+                if (!response.ok) {
+                    throw new Error(data.error || '검색에 실패했습니다.');
+                }
                 if (!data.item || data.item.length === 0) {
                     resultList.innerHTML = '<div style="text-align:center; color:#888; margin-top:20px; font-size:12px;">결과가 없습니다.</div>';
                     return;
@@ -273,138 +271,31 @@
         }
 
         // --- 노션 저장 ---
+        // 중복 체크 + 페이지 생성을 서버(/api/save)에서 한 번에 처리합니다.
         async function saveToNotion(element, book) {
             const loadingOverlay = element.querySelector('.item-loading');
             loadingOverlay.style.display = 'flex';
 
-            const isbn = book.isbn13 || book.isbn;
-
-            // ==========================================
-            // 🛑 [신규 추가] 중복 도서 체크 로직
-            // ==========================================
             try {
-                const checkUrl = `https://api.notion.com/v1/databases/${CONFIG.NOTION_DB_ID}/query`;
-                const checkResponse = await fetch(`${CONFIG.PROXY_URL}${encodeURIComponent(checkUrl)}`, {
+                const response = await fetch('/api/save', {
                     method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${CONFIG.NOTION_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Notion-Version": "2022-06-28"
-                    },
-                    body: JSON.stringify({
-                        "filter": {
-                            "property": "ISBN",
-                            "rich_text": {
-                                "equals": isbn
-                            }
-                        }
-                    })
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(book)
                 });
 
-                if (checkResponse.ok) {
-                    const checkData = await checkResponse.json();
-                    // 이미 결과가 존재한다면 중복된 책이므로 중단
-                    if (checkData.results && checkData.results.length > 0) {
-                        loadingOverlay.style.display = 'none';
-                        alert(`⚠️ 이미 데이터베이스에 저장되어 있는 도서입니다!\n[${book.title}]`);
-                        return;
-                    }
-                }
-            } catch (err) {
-                console.error("중복 검사 중 오류 발생:", err);
-            }
-
-            const descText = book.description ? book.description.substring(0, 1800) : "책 소개 없음";
-            
-            // ==========================================
-            // 노션 API Payload 구성
-            // ==========================================
-            const payload = {
-                "parent": { "database_id": CONFIG.NOTION_DB_ID },
-                
-                "icon": {
-                    "type": "emoji",
-                    "emoji": "📖"
-                },
-                
-                "cover": {
-                    "type": "external",
-                    "external": { "url": book.cover }
-                },
-                
-                "properties": {
-                    "제목": { "title": [ { "text": { "content": book.title } } ] },
-                    "저자": { "rich_text": [ { "text": { "content": book.author } } ] },
-                    "출판사": { "rich_text": [ { "text": { "content": book.publisher } } ] },
-                    "ISBN": { "rich_text": [ { "text": { "content": isbn } } ] },
-                    "링크": { "url": book.link },
-                    
-                    "상태": { 
-                        "select": {
-                            "name": "읽고 싶은 책"
-                        }
-                    },
-                    
-                    "표지": {
-                        "files": [
-                            {
-                                "name": book.title + " 표지",
-                                "type": "external",
-                                "external": {
-                                    "url": book.cover
-                                }
-                            }
-                        ]
-                    }
-                },
-                "children": [
-                    {
-                        "object": "block",
-                        "type": "image",
-                        "image": { "type": "external", "external": { "url": book.cover } }
-                    },
-                    { 
-                        "object": "block", 
-                        "type": "heading_2", 
-                        "heading_2": { "rich_text": [{ "type": "text", "text": { "content": "책 소개" } }] } 
-                    }
-                ]
-            };
-
-            const fullDesc = book.description || "책 소개 없음";
-            const maxLen = 2000;
-            
-            for (let i = 0; i < fullDesc.length; i += maxLen) {
-                payload.children.push({
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [{ "type": "text", "text": { "content": fullDesc.substring(i, i + maxLen) } }]
-                    }
-                });
-            }
-
-            try {
-                // 브라우저 환경에서 안정적인 통신을 위해 생성 API에도 프록시 주소를 적용했습니다.
-                const saveUrl = `https://api.notion.com/v1/pages`;
-                const response = await fetch(`${CONFIG.PROXY_URL}${encodeURIComponent(saveUrl)}`, {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${CONFIG.NOTION_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Notion-Version": "2022-06-28"
-                    },
-                    body: JSON.stringify(payload)
-                });
-
+                const data = await response.json();
                 loadingOverlay.style.display = 'none';
 
-                if (response.ok) {
-                    showSavedAnimation(); 
-                } else {
-                    const err = await response.json();
-                    throw new Error(err.message);
+                if (!response.ok) {
+                    throw new Error(data.error || '저장에 실패했습니다.');
                 }
+
+                if (data.status === 'duplicate') {
+                    alert(`⚠️ 이미 데이터베이스에 저장되어 있는 도서입니다!\n[${book.title}]`);
+                    return;
+                }
+
+                showSavedAnimation();
             } catch (error) {
                 loadingOverlay.style.display = 'none';
                 alert(`저장 실패: ${error.message}`);
